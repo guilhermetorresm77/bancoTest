@@ -108,7 +108,7 @@ class AccountingEvent(models.Model):
 
 class ServiceAgreement(models.Model):
     customer = models.OneToOneField(Customer, on_delete=models.CASCADE)
-    rate = models.DecimalField(max_digits=5, decimal_places=2)
+    rate = models.DecimalField(max_digits=10, decimal_places=2)
 
     def get_posting_rule(self, event_type, date):
         return self.posting_rules.filter(event_type=event_type, start_date__lte=date, end_date__gte=date).first()
@@ -188,3 +188,15 @@ class Adjustment(AccountingEvent):
     def restore_accounts(self):
         # Logic to restore accounts would go here
         pass
+
+
+"""class JurosAE(AccountingEvent):
+    amount = models.ForeignKey(Money, on_delete=models.PROTECT)
+
+class JurostPR(PostingRule):
+    def calculate_amount(self, event):
+        return Money.objects.create(
+            amount = event.amount.multiply(self.service_agreement.rate)
+            currency = event.amount.currency
+        )
+"""

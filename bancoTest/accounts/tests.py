@@ -76,3 +76,27 @@ class AccountingEventModelTest(TestCase):
         self.assertEqual(self.accounting_event.event_type, self.event_type)
         self.assertEqual(self.accounting_event.customer, self.customer)
         self.assertIn(self.entry, self.accounting_event.resulting_entries.all())
+
+
+class DepositoEventModelTest(TestCase):
+    def setUp(self):
+        self.currency = Currency.objects.create(code='USD', name='US Dollar')
+        self.customer = Customer.objects.create(name='Test Customer')
+        self.account = Account.objects.create(name='Test Account', currency=self.currency, account_type=1)
+        self.entry_type_credit = EntryType.objects.create(name='Crédito', account_type=1)
+        self.money = Money.objects.create(amount=Decimal('100.00'), currency=self.currency)
+        self.deposit_event = DepositoEvent.objects.create(
+            event_type=EventType.objects.create(name='Depósito'),
+            when_occurred=timezone.now(),
+            when_noticed=timezone.now(),
+            customer=self.customer,
+            deposit_amount=Decimal('50.00')
+        )
+    
+    def test_deposito_event_process(self):
+        self.deposit_event.process()
+        # Verifica se a entrada foi criada e adicionada
+        self.assertEqual(self.customer.accounts.first().entries.count(), 1)
+        entry = self.customer.accounts.first().entries.first()
+        self.assertEqual(entry.amount.amount, Decimal('50.00'))
+        self.assertEqual(entry.entry_type.name, 'Crédito')
