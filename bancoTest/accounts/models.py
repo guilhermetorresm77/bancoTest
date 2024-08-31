@@ -34,6 +34,12 @@ class Money(models.Model):
 
     def negate(self):
         return Money.objects.create(amount=-self.amount, currency=self.currency)
+    
+    def add_value(self, value):
+        if not isinstance(value, (Decimal, float)):
+            raise TypeError("The value must be a Decimal or float")
+        new_amount = self.amount + Decimal(value)
+        return Money.objects.create(amount=new_amount, currency=self.currency)
 
 class EventType(models.Model):
     name = models.CharField(max_length=50, unique=True)
@@ -48,9 +54,15 @@ class Account(models.Model):
 
     def balance(self, date=None):
         entries = self.entries.all()
+
         if date:
             entries = entries.filter(date__lte=date)
-        return sum(entry.amount for entry in entries)
+
+        total = Decimal('0.00')
+
+        for entry in entries:
+            total += entry.amount.amount
+        return total
 
     def add_entry(self, entry):
         entry.account = self
@@ -59,7 +71,8 @@ class Account(models.Model):
 class Customer(models.Model):
     name = models.CharField(max_length=100)
     accounts = models.ManyToManyField(Account)
-
+    service_agreement = models.ForeignKey('ServiceAgreement', related_name='customer', on_delete=models.PROTECT, null=True)
+    
     def add_entry(self, entry):
         account = self.accounts.get(account_type=entry.entry_type.account_type)
         account.add_entry(entry)
@@ -81,14 +94,30 @@ class AccountingEvent(models.Model):
     customer = models.ForeignKey(Customer, on_delete=models.PROTECT)
     adjusted_event = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL, related_name='adjustments')
     resulting_entries = models.ManyToManyField(Entry)
+    is_processed = models.BooleanField(default=False)
 
     def process(self):
+        print("Processing")
+        if self.is_processed:
+            raise ValueError('Cannot process an event twice')
         if self.adjusted_event:
             self.adjusted_event.reverse()
-        self.find_rule().process(self)
+        rule = self.find_rule()
+        if rule is not None:
+            rule.process(self)
+            self.is_processed = True
+        else:
+            raise ValueError('No posting rule found for this event')
 
     def find_rule(self):
-        return self.customer.service_agreement.get_posting_rule(self.event_type, self.when_occurred)
+        print("Procurando Regra de postagem pelo agreement")
+        rule = self.customer.service_agreement.get_posting_rule(self.event_type, self.when_occurred)
+        print(f"A Posting rule encontrada: {rule.__class__.__name__}")
+
+        if rule:
+            return rule
+        else:
+            raise ValueError('Não foi encontrado uma regra de postagem para esse evento')
 
     def reverse(self):
         for entry in self.resulting_entries.all():
@@ -107,14 +136,29 @@ class AccountingEvent(models.Model):
             secondary_event.reverse()
 
 class ServiceAgreement(models.Model):
-    customer = models.OneToOneField(Customer, on_delete=models.CASCADE)
     rate = models.DecimalField(max_digits=10, decimal_places=2)
 
     def get_posting_rule(self, event_type, date):
+        print("Getting posting rule for event", event_type)
         return self.posting_rules.filter(event_type=event_type, start_date__lte=date, end_date__gte=date).first()
+    
+    def add_posting_rule(self, posting_rule_class, event_type, entry_type, start_date, end_date=None):
+        # Verifica se a classe é uma subclasse de PostingRule
+        if not issubclass(posting_rule_class, PostingRule):
+            raise TypeError("O parâmetro posting_rule_class deve ser uma subclasse de PostingRule")
 
+        # Cria uma nova PostingRule ou subclasse
+        posting_rule = posting_rule_class(
+            service_agreement=self,
+            event_type=event_type,
+            entry_type=entry_type,
+            start_date=start_date,
+            end_date=end_date
+        )
+        return posting_rule
+    
 class PostingRule(models.Model):
-    service_agreement = models.ForeignKey(ServiceAgreement, related_name='posting_rules', on_delete=models.CASCADE)
+    service_agreement = models.ForeignKey(ServiceAgreement, related_name='posting_rules', on_delete=models.PROTECT)
     event_type = models.ForeignKey(EventType, on_delete=models.PROTECT)
     entry_type = models.ForeignKey(EntryType, on_delete=models.PROTECT)
     start_date = models.DateTimeField()
@@ -122,6 +166,9 @@ class PostingRule(models.Model):
 
     def process(self, event):
         amount = self.calculate_amount(event)
+        self.make_entry(event, amount)
+
+    def make_entry(self, event, amount):
         entry = Entry.objects.create(
             account=event.customer.accounts.get(account_type=self.entry_type.account_type),
             entry_type=self.entry_type,
@@ -133,23 +180,8 @@ class PostingRule(models.Model):
 
     def calculate_amount(self, event):
         raise NotImplementedError("Subclasses must implement calculate_amount")
-
-class MultiplyByRatePR(PostingRule):
-    def calculate_amount(self, event):
-        usage_event = event
-        return Money.objects.create(
-            amount=usage_event.amount * usage_event.customer.service_agreement.rate,
-            currency=event.customer.accounts.first().currency
-        )
-
-class AmountFormulaPR(PostingRule):
-    multiplier = models.DecimalField(max_digits=5, decimal_places=2)
-    fixed_fee = models.ForeignKey(Money, on_delete=models.PROTECT)
-
-    def calculate_amount(self, event):
-        monetary_event = event
-        return monetary_event.amount.multiply(self.multiplier).add(self.fixed_fee)
-
+        #return event.amount.add_value(self.service_agreement.rate)
+    
 class Adjustment(AccountingEvent):
     new_events = models.ManyToManyField(AccountingEvent, related_name='adjustments_as_new')
     old_events = models.ManyToManyField(AccountingEvent, related_name='adjustments_as_old')
@@ -189,14 +221,12 @@ class Adjustment(AccountingEvent):
         # Logic to restore accounts would go here
         pass
 
-
-"""class JurosAE(AccountingEvent):
+class DepositoAE(AccountingEvent):
+    account = models.ForeignKey(Account, on_delete=models.PROTECT)
     amount = models.ForeignKey(Money, on_delete=models.PROTECT)
 
-class JurostPR(PostingRule):
+class DepositoPR(PostingRule):
     def calculate_amount(self, event):
-        return Money.objects.create(
-            amount = event.amount.multiply(self.service_agreement.rate)
-            currency = event.amount.currency
-        )
-"""
+        return event.amount.add_value(self.service_agreement.rate + Decimal('10.00'))
+
+
