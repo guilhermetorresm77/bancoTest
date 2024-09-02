@@ -14,11 +14,11 @@ class CurrencyAdmin(admin.ModelAdmin):
 @admin.register(Money)
 class MoneyAdmin(admin.ModelAdmin):
     list_display = ('amount', 'currency')
-
+'''
 @admin.register(PostingRule)
 class PostingRuleAdmin(admin.ModelAdmin):
     list_display = ('service_agreement', 'event_type', 'entry_type')
-
+'''
 @admin.register(Account)
 class AccountAdmin(admin.ModelAdmin):
     list_display = ('name', 'account_type', 'currency')

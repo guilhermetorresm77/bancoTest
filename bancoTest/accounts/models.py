@@ -130,7 +130,7 @@ class AccountingEvent(models.Model):
     def find_rule(self):
         print("Procurando Regra de postagem pelo agreement")
         rule = self.customer.service_agreement.get_posting_rule(self.event_type, self.when_occurred)
-        print(f"A Posting rule encontrada: {rule.__class__.__name__}")
+        print(f"A Posting rule encontrada: {rule.__class__.__name__ if rule else 'None'}")
 
         if rule:
             return rule
@@ -157,30 +157,30 @@ class ServiceAgreement(models.Model):
     rate = models.DecimalField(max_digits=10, decimal_places=2)
 
     def get_posting_rule(self, event_type, date):
-        print("Getting posting rule for event", event_type)
-        return self.posting_rules.filter(event_type=event_type, start_date__lte=date, end_date__gte=date).first()
-    
-    def add_posting_rule(self, posting_rule_class, event_type, entry_type, start_date, end_date=None):
-        # Verifica se a classe é uma subclasse de PostingRule
-        if not issubclass(posting_rule_class, PostingRule):
-            raise TypeError("O parâmetro posting_rule_class deve ser uma subclasse de PostingRule")
 
-        # Cria uma nova PostingRule ou subclasse
-        posting_rule = posting_rule_class(
-            service_agreement=self,
-            event_type=event_type,
-            entry_type=entry_type,
-            start_date=start_date,
-            end_date=end_date
-        )
-        return posting_rule
+        # Lista de regras de postagem para cada evento
+        lista_Posting_rules = ['depositopr', 'saquepr']
+
+        print("Getting posting rule for event", event_type)
+        for related_name in lista_Posting_rules:  # Add more as needed
+            rules = getattr(self, related_name).filter(
+                event_type=event_type, 
+                start_date__lte=date
+            ).filter(models.Q(end_date__gte=date) | models.Q(end_date__isnull=True))
+            rule = rules.first()
+            if rule:
+                return rule
+        return None
     
 class PostingRule(models.Model):
-    service_agreement = models.ForeignKey(ServiceAgreement, related_name='posting_rules', on_delete=models.PROTECT)
+    service_agreement = models.ForeignKey(ServiceAgreement, related_name='%(class)s', on_delete=models.PROTECT)
     event_type = models.ForeignKey(EventType, on_delete=models.PROTECT)
     entry_type = models.ForeignKey(EntryType, on_delete=models.PROTECT)
     start_date = models.DateTimeField()
     end_date = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        abstract = True
 
     def process(self, event):
         amount = self.calculate_amount(event)
@@ -197,8 +197,7 @@ class PostingRule(models.Model):
         event.resulting_entries.add(entry)
 
     def calculate_amount(self, event):
-        #raise NotImplementedError("Subclasses must implement calculate_amount")
-        return event.amount.add_value(self.service_agreement.rate)
+        raise NotImplementedError("Subclasses must implement calculate_amount")
     
 class Adjustment(AccountingEvent):
     new_events = models.ManyToManyField(AccountingEvent, related_name='adjustments_as_new')
@@ -244,7 +243,16 @@ class DepositoAE(AccountingEvent):
     amount = models.ForeignKey(Money, on_delete=models.PROTECT)
 
 class DepositoPR(PostingRule):
+    
     def calculate_amount(self, event):
-        return event.amount.add_value(self.service_agreement.rate)
+        return event.amount
 
+class SaqueAE(AccountingEvent):
+    account = models.ForeignKey(Account, on_delete=models.PROTECT)
+    amount = models.ForeignKey(Money, on_delete=models.PROTECT)
+
+class SaquePR(PostingRule):
+    
+    def calculate_amount(self, event):
+        return event.amount.negate()
 
