@@ -15,26 +15,7 @@ class TestAccounting(TestCase):
 
         # Create ServiceAgreement and associate with Customer
         self.agreement = ServiceAgreement.objects.create(rate=Decimal('10.00'))
-        self.customer.service_agreement = self.agreement
-        self.customer.accounts.add(self.account)
-        self.customer.save()
-
         
-    def test_posting_rule_creation(self):
-        self.posting_rule2 = self.agreement.add_posting_rule(
-            posting_rule_class=DepositoPR,
-            event_type=self.event_type,
-            entry_type=self.entry_type,
-            start_date=timezone.now(),
-            end_date=timezone.now() + timezone.timedelta(days=1)
-        )
-        self.posting_rule2.save()
-        
-        # Verifique se a regra específica foi criada
-        found_rule = PostingRule.objects.get(event_type=self.event_type)
-        self.assertIsInstance(found_rule, DepositoPR, "A regra encontrada não é uma DepositoPR")
-
-    def test_deposit(self):
         # Adicionar a PostingRule
         self.posting_rule = self.agreement.add_posting_rule(
             posting_rule_class=DepositoPR,
@@ -44,9 +25,30 @@ class TestAccounting(TestCase):
             end_date=timezone.now() + timezone.timedelta(days=1)
         )
         print(f"Posting rule created: {self.posting_rule.__class__.__name__}")
-
         self.posting_rule.save()
+        self.agreement.save()
+        self.customer.service_agreement = self.agreement
+        self.customer.accounts.add(self.account)
+        self.customer.save()
 
+        
+    def test_posting_rule_creation(self):
+        self.event_type2 = EventType.objects.create(name='Tete criação')
+        self.posting_rule2 = self.agreement.add_posting_rule(
+            posting_rule_class=DepositoPR,
+            event_type=self.event_type2,
+            entry_type=self.entry_type,
+            start_date=timezone.now(),
+            end_date=timezone.now() + timezone.timedelta(days=1)
+        )
+        self.posting_rule2.save()
+        
+        # Verifique se a regra específica foi criada
+        found_rule = DepositoPR.objects.get(event_type=self.event_type2)
+        self.assertIsInstance(found_rule, DepositoPR, "A regra encontrada não é uma DepositoPR")
+    
+    def test_deposit(self):
+        
         deposit_event = DepositoAE.objects.create(
             amount=self.money,
             account=self.account,

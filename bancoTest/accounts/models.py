@@ -6,6 +6,9 @@ class Currency(models.Model):
     code = models.CharField(max_length=3, unique=True)
     name = models.CharField(max_length=50)
 
+    def __str__(self):
+        return self.name
+
 class Money(models.Model):
     amount = models.DecimalField(max_digits=15, decimal_places=2)
     currency = models.ForeignKey(Currency, on_delete=models.PROTECT)
@@ -44,8 +47,14 @@ class Money(models.Model):
 class EventType(models.Model):
     name = models.CharField(max_length=50, unique=True)
 
+    def __str__(self):
+        return self.name
+
 class AccountType(models.Model):
     name = models.CharField(max_length=50, unique=True)
+
+    def __str__(self):
+        return self.name
 
 class Account(models.Model):
     name = models.CharField(max_length=100)
@@ -68,6 +77,9 @@ class Account(models.Model):
         entry.account = self
         entry.save()
 
+    def __str__(self):
+        return self.name
+
 class Customer(models.Model):
     name = models.CharField(max_length=100)
     accounts = models.ManyToManyField(Account)
@@ -77,9 +89,15 @@ class Customer(models.Model):
         account = self.accounts.get(account_type=entry.entry_type.account_type)
         account.add_entry(entry)
 
+    def __str__(self):
+        return self.name
+    
 class EntryType(models.Model):
     name = models.CharField(max_length=50, unique=True)
     account_type = models.ForeignKey(AccountType, on_delete=models.PROTECT)
+
+    def __str__(self):
+        return self.name
 
 class Entry(models.Model):
     account = models.ForeignKey(Account, related_name='entries', on_delete=models.PROTECT)
@@ -179,8 +197,8 @@ class PostingRule(models.Model):
         event.resulting_entries.add(entry)
 
     def calculate_amount(self, event):
-        raise NotImplementedError("Subclasses must implement calculate_amount")
-        #return event.amount.add_value(self.service_agreement.rate)
+        #raise NotImplementedError("Subclasses must implement calculate_amount")
+        return event.amount.add_value(self.service_agreement.rate)
     
 class Adjustment(AccountingEvent):
     new_events = models.ManyToManyField(AccountingEvent, related_name='adjustments_as_new')
@@ -227,6 +245,6 @@ class DepositoAE(AccountingEvent):
 
 class DepositoPR(PostingRule):
     def calculate_amount(self, event):
-        return event.amount.add_value(self.service_agreement.rate + Decimal('10.00'))
+        return event.amount.add_value(self.service_agreement.rate)
 
 
