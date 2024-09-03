@@ -43,6 +43,11 @@ class Money(models.Model):
             raise TypeError("The value must be a Decimal or float")
         new_amount = self.amount + Decimal(value)
         return Money.objects.create(amount=new_amount, currency=self.currency)
+    
+    def is_equals(self, other):
+        if not isinstance(other, Money):
+            raise TypeError("The other value must be a Money instance")
+        return self.amount == other.amount
 
 class EventType(models.Model):
     name = models.CharField(max_length=50, unique=True)
@@ -254,5 +259,8 @@ class SaqueAE(AccountingEvent):
 class SaquePR(PostingRule):
     
     def calculate_amount(self, event):
+        # Verify that the account amount is more than the saque amount
+        if event.amount.amount > event.account.balance():
+            raise ValueError("Insufficient funds")
         return event.amount.negate()
 
