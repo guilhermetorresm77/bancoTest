@@ -164,7 +164,8 @@ class ServiceAgreement(models.Model):
     def get_posting_rule(self, event_type, date):
 
         # Lista de regras de postagem para cada evento
-        lista_Posting_rules = ['depositopr', 'saquepr']
+        # Todo novo objeto de regra de postagem (PostingRule) deve adicionar seu nome em minúsculo na lista abaixo
+        lista_Posting_rules = ['depositopr', 'saquepr', 'depositpr', 'withdrawalpr', 'transferpr']
 
         print("Getting posting rule for event", event_type)
         for related_name in lista_Posting_rules:  # Add more as needed
@@ -264,3 +265,14 @@ class SaquePR(PostingRule):
             raise ValueError("Insufficient funds")
         return event.amount.negate()
 
+class TaxEvent(AccountingEvent):
+    tax_rate = models.DecimalField(max_digits=10, decimal_places=2)
+    account = models.ForeignKey(Account, on_delete=models.PROTECT)
+    amount = models.ForeignKey(Money, on_delete=models.PROTECT)
+
+class AmountAdd(PostingRule):
+    multiplier = models.DecimalField(max_digits=10, decimal_places=5)
+    fixedFee = models.ForeignKey(Money, on_delete=models.PROTECT)
+    def calculate_amount(self, event):
+        eventAmount = event.amount
+        return eventAmount.multiply(self.multiplier).add(self.fixedFee)
