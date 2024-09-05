@@ -10,6 +10,7 @@ from accounts.models import (
     Money,
     Entry,
     Account,
+    Customer,
     )
 
 class TransactionType(models.Model):
@@ -92,18 +93,25 @@ class WithdrawalPR(PostingRule):
 class TransferPR(PostingRule):
     def calculate_amount(self, event):
         # Cria duas entradas: uma negativa para a conta de origem e uma positiva para a conta de destino
-        
         from_acount_amount = event.amount.negate()
         to_account_amount = event.amount
 
-        return from_acount_amount, to_account_amount
-    
-    def process(self, event):
-        from_acount_amount, to_account_amount = self.calculate_amount(event)
-        self.make_entry(event, from_acount_amount)
-        self.make_entry(event, to_account_amount)
-        
+        self.make_entry_with_account(event, from_acount_amount, event.from_account)
+        self.make_entry_with_account(event, to_account_amount, event.to_account)
 
+        return None
+    
+    def make_entry_with_account(self, event, amount, account):
+        entry = Entry.objects.create(
+            account=account,
+            entry_type=self.entry_type,
+            amount=amount,
+            date=event.when_noticed
+        )
+        print(f"Entrada: {self.entry_type} Valor: {amount} Evento: {event.event_type}")
+        #event.customer.add_entry(entry)
+        event.resulting_entries.add(entry)
+       
 class TransactionLog(models.Model):
     transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE, related_name='logs')
     message = models.TextField()
@@ -111,4 +119,3 @@ class TransactionLog(models.Model):
 
     def __str__(self):
         return f"Log for {self.transaction} at {self.timestamp}"
-    

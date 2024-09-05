@@ -2,6 +2,7 @@ from django.db import models
 from django.utils import timezone
 from decimal import Decimal
 
+
 class Currency(models.Model):
     code = models.CharField(max_length=3, unique=True)
     name = models.CharField(max_length=50)
@@ -189,8 +190,12 @@ class PostingRule(models.Model):
         abstract = True
 
     def process(self, event):
-        amount = self.calculate_amount(event)
-        self.make_entry(event, amount)
+        if self.is_transfer():
+            a = self.calculate_amount(event)
+            
+        else:
+            amount = self.calculate_amount(event)
+            self.make_entry(event, amount)
 
     def make_entry(self, event, amount):
         entry = Entry.objects.create(
@@ -199,11 +204,21 @@ class PostingRule(models.Model):
             amount=amount,
             date=event.when_noticed
         )
+        print(f"Entrada: {self.entry_type} Valor: {amount} Evento: {event.event_type}")
         event.customer.add_entry(entry)
         event.resulting_entries.add(entry)
 
     def calculate_amount(self, event):
         raise NotImplementedError("Subclasses must implement calculate_amount")
+    
+    def is_transfer(self):
+        return self.entry_type.name == 'TRANSFER'
+
+    """
+    example
+    def is_taxable(self):
+        return self.entry_type.name != 'TAX'
+    """
     
 class Adjustment(AccountingEvent):
     new_events = models.ManyToManyField(AccountingEvent, related_name='adjustments_as_new')
